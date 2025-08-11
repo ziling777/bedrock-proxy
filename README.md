@@ -215,4 +215,4 @@ python -m pytest
 
 ---
 
-**🚀 立即开始您的 OpenAI 到 Bedrock Nova 迁移之旅！**
+**🚀 立即开始您的 OpenAI 到 Bedrock Nova 迁移之旅！**# bedrock-proxy
