@@ -1,0 +1,516 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Bedrock Nova Proxy - Customer Serverless Deployment'
+
+Parameters:
+  CustomerName:
+    Type: String
+    Description: 'Customer name for resource naming'
+    MinLength: 1
+    MaxLength: 50
+    AllowedPattern: '^[a-zA-Z0-9-]+$'
+  
+  Environment:
+    Type: String
+    Default: 'prod'
+    AllowedValues: ['dev', 'staging', 'prod']
+    Description: 'Deployment environment'
+  
+  DeploymentPackageS3Bucket:
+    Type: String
+    Description: 'S3 bucket containing the deployment package'
+  
+  DeploymentPackageS3Key:
+    Type: String
+    Description: 'S3 key for the deployment package'
+  
+  VpcId:
+    Type: String
+    Default: ''
+    Description: 'Customer VPC ID (optional)'
+  
+  SubnetIds:
+    Type: CommaDelimitedList
+    Default: ''
+    Description: 'Customer Subnet IDs (optional)'
+  
+  LambdaMemorySize:
+    Type: Number
+    Default: 1024
+    MinValue: 128
+    MaxValue: 10240
+    Description: 'Lambda function memory size in MB'
+  
+  LambdaTimeout:
+    Type: Number
+    Default: 300
+    MinValue: 1
+    MaxValue: 900
+    Description: 'Lambda function timeout in seconds'
+  
+  ReservedConcurrency:
+    Type: Number
+    Default: 100
+    MinValue: 0
+    MaxValue: 1000
+    Description: 'Lambda reserved concurrency'
+  
+  ApiGatewayRateLimit:
+    Type: Number
+    Default: 1000
+    MinValue: 1
+    MaxValue: 10000
+    Description: 'API Gateway rate limit per second'
+  
+  ApiGatewayBurstLimit:
+    Type: Number
+    Default: 2000
+    MinValue: 1
+    MaxValue: 20000
+    Description: 'API Gateway burst limit'
+  
+  LogRetentionDays:
+    Type: Number
+    Default: 30
+    AllowedValues: [1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1827, 3653]
+    Description: 'CloudWatch log retention in days'
+  
+  EnableCustomDomain:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: 'Enable custom domain for API Gateway'
+  
+  CustomDomainName:
+    Type: String
+    Default: ''
+    Description: 'Custom domain name (if enabled)'
+  
+  CertificateArn:
+    Type: String
+    Default: ''
+    Description: 'SSL certificate ARN (if custom domain enabled)'
+
+Conditions:
+  UseCustomVpc: !Not [!Equals [!Ref VpcId, '']]
+  UseCustomDomain: !Equals [!Ref EnableCustomDomain, 'true']
+  HasSubnets: !Not [!Equals [!Join ['', !Ref SubnetIds], '']]
+
+Resources:
+  # IAM Role for Lambda
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${CustomerName}-${Environment}-bedrock-nova-proxy-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - !If
+          - UseCustomVpc
+          - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+          - !Ref AWS::NoValue
+      Policies:
+        - PolicyName: BedrockAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:InvokeModelWithResponseStream
+                  - bedrock:ListFoundationModels
+                Resource: 
+                  - !Sub 'arn:aws:bedrock:${AWS::Region}::foundation-model/amazon.nova-*'
+        - PolicyName: CloudWatchMetrics
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricData
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    'cloudwatch:namespace': 'Customer/BedrockNovaProxy'
+
+  # Security Group for Lambda (if using VPC)
+  LambdaSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Condition: UseCustomVpc
+    Properties:
+      GroupName: !Sub '${CustomerName}-${Environment}-bedrock-nova-proxy-sg'
+      GroupDescription: 'Security group for Bedrock Nova Proxy Lambda'
+      VpcId: !Ref VpcId
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+          Description: 'HTTPS outbound for Bedrock API'
+        - IpProtocol: tcp
+          FromPort: 53
+          ToPort: 53
+          CidrIp: 0.0.0.0/0
+          Description: 'DNS resolution'
+        - IpProtocol: udp
+          FromPort: 53
+          ToPort: 53
+          CidrIp: 0.0.0.0/0
+          Description: 'DNS resolution'
+      Tags:
+        - Key: Name
+          Value: !Sub '${CustomerName}-${Environment}-bedrock-nova-proxy-sg'
+        - Key: Customer
+          Value: !Ref CustomerName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Lambda Function
+  ProxyLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${CustomerName}-${Environment}-bedrock-nova-proxy'
+      Description: !Sub 'Bedrock Nova Proxy for ${CustomerName} ${Environment}'
+      Runtime: python3.11
+      Handler: lambda_function.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        S3Bucket: !Ref DeploymentPackageS3Bucket
+        S3Key: !Ref DeploymentPackageS3Key
+      Timeout: !Ref LambdaTimeout
+      MemorySize: !Ref LambdaMemorySize
+      ReservedConcurrencyLimit: !Ref ReservedConcurrency
+      Environment:
+        Variables:
+          CUSTOMER_NAME: !Ref CustomerName
+          ENVIRONMENT: !Ref Environment
+          AWS_REGION: !Ref AWS::Region
+          LOG_LEVEL: 'INFO'
+          ENABLE_METRICS: 'true'
+          METRICS_NAMESPACE: 'Customer/BedrockNovaProxy'
+      VpcConfig: !If
+        - UseCustomVpc
+        - SubnetIds: !If
+            - HasSubnets
+            - !Ref SubnetIds
+            - !Ref AWS::NoValue
+          SecurityGroupIds: 
+            - !Ref LambdaSecurityGroup
+        - !Ref AWS::NoValue
+      Tags:
+        - Key: Customer
+          Value: !Ref CustomerName
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Service
+          Value: 'bedrock-nova-proxy'
+
+  # CloudWatch Log Group
+  LambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${CustomerName}-${Environment}-bedrock-nova-proxy'
+      RetentionInDays: !Ref LogRetentionDays
+      Tags:
+        - Key: Customer
+          Value: !Ref CustomerName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # API Gateway
+  ApiGateway:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: !Sub '${CustomerName}-${Environment}-bedrock-nova-proxy-api'
+      Description: !Sub 'Bedrock Nova Proxy API for ${CustomerName} ${Environment}'
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+      Policy:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action: 'execute-api:Invoke'
+            Resource: '*'
+      Tags:
+        - Key: Customer
+          Value: !Ref CustomerName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # API Gateway Resource (proxy+)
+  ProxyResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !GetAtt ApiGateway.RootResourceId
+      PathPart: '{proxy+}'
+
+  # API Gateway Method (ANY)
+  ProxyMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref ProxyResource
+      HttpMethod: ANY
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ProxyLambda.Arn}/invocations'
+        IntegrationResponses:
+          - StatusCode: 200
+      MethodResponses:
+        - StatusCode: 200
+          ResponseModels:
+            application/json: Empty
+
+  # API Gateway Method for root
+  RootMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !GetAtt ApiGateway.RootResourceId
+      HttpMethod: ANY
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ProxyLambda.Arn}/invocations'
+        IntegrationResponses:
+          - StatusCode: 200
+      MethodResponses:
+        - StatusCode: 200
+          ResponseModels:
+            application/json: Empty
+
+  # API Gateway Deployment
+  ApiDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn: 
+      - ProxyMethod
+      - RootMethod
+    Properties:
+      RestApiId: !Ref ApiGateway
+      StageName: !Ref Environment
+      StageDescription: !Sub '${Environment} stage for ${CustomerName}'
+
+  # API Gateway Stage
+  ApiStage:
+    Type: AWS::ApiGateway::Stage
+    Properties:
+      RestApiId: !Ref ApiGateway
+      DeploymentId: !Ref ApiDeployment
+      StageName: !Ref Environment
+      Description: !Sub '${Environment} stage for ${CustomerName}'
+      ThrottleSettings:
+        RateLimit: !Ref ApiGatewayRateLimit
+        BurstLimit: !Ref ApiGatewayBurstLimit
+      MethodSettings:
+        - ResourcePath: '/*'
+          HttpMethod: '*'
+          LoggingLevel: INFO
+          DataTraceEnabled: true
+          MetricsEnabled: true
+          ThrottlingRateLimit: !Ref ApiGatewayRateLimit
+          ThrottlingBurstLimit: !Ref ApiGatewayBurstLimit
+      AccessLogSetting:
+        DestinationArn: !GetAtt ApiGatewayLogGroup.Arn
+        Format: '$context.requestId $context.identity.sourceIp $context.identity.caller $context.identity.user [$context.requestTime] "$context.httpMethod $context.resourcePath $context.protocol" $context.status $context.error.message $context.error.messageString'
+      Tags:
+        - Key: Customer
+          Value: !Ref CustomerName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # API Gateway Log Group
+  ApiGatewayLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/apigateway/${CustomerName}-${Environment}-bedrock-nova-proxy'
+      RetentionInDays: !Ref LogRetentionDays
+      Tags:
+        - Key: Customer
+          Value: !Ref CustomerName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Lambda Permission for API Gateway
+  LambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ProxyLambda
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub '${ApiGateway}/*/*'
+
+  # Custom Domain (if enabled)
+  CustomDomain:
+    Type: AWS::ApiGateway::DomainName
+    Condition: UseCustomDomain
+    Properties:
+      DomainName: !Ref CustomDomainName
+      CertificateArn: !Ref CertificateArn
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+      Tags:
+        - Key: Customer
+          Value: !Ref CustomerName
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Base Path Mapping (if custom domain enabled)
+  BasePathMapping:
+    Type: AWS::ApiGateway::BasePathMapping
+    Condition: UseCustomDomain
+    Properties:
+      DomainName: !Ref CustomDomain
+      RestApiId: !Ref ApiGateway
+      Stage: !Ref Environment
+
+  # CloudWatch Dashboard
+  MonitoringDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub '${CustomerName}-${Environment}-bedrock-nova-proxy'
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 0,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["AWS/Lambda", "Duration", "FunctionName", "${ProxyLambda}"],
+                  [".", "Errors", ".", "."],
+                  [".", "Invocations", ".", "."],
+                  [".", "Throttles", ".", "."]
+                ],
+                "period": 300,
+                "stat": "Average",
+                "region": "${AWS::Region}",
+                "title": "Lambda Metrics"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 0,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["AWS/ApiGateway", "Count", "ApiName", "${ApiGateway}", "Stage", "${Environment}"],
+                  [".", "Latency", ".", ".", ".", "."],
+                  [".", "4XXError", ".", ".", ".", "."],
+                  [".", "5XXError", ".", ".", ".", "."]
+                ],
+                "period": 300,
+                "stat": "Sum",
+                "region": "${AWS::Region}",
+                "title": "API Gateway Metrics"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 6,
+              "width": 24,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["Customer/BedrockNovaProxy", "RequestCount", "Customer", "${CustomerName}", "Environment", "${Environment}"],
+                  [".", "ErrorCount", ".", ".", ".", "."],
+                  [".", "ResponseTime", ".", ".", ".", "."]
+                ],
+                "period": 300,
+                "stat": "Sum",
+                "region": "${AWS::Region}",
+                "title": "Custom Application Metrics"
+              }
+            }
+          ]
+        }
+
+  # CloudWatch Alarms
+  HighErrorRateAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${CustomerName}-${Environment}-bedrock-nova-proxy-high-error-rate'
+      AlarmDescription: 'High error rate for Bedrock Nova Proxy'
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 10
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref ProxyLambda
+      TreatMissingData: notBreaching
+
+  HighLatencyAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${CustomerName}-${Environment}-bedrock-nova-proxy-high-latency'
+      AlarmDescription: 'High latency for Bedrock Nova Proxy'
+      MetricName: Duration
+      Namespace: AWS/Lambda
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 10000
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref ProxyLambda
+      TreatMissingData: notBreaching
+
+Outputs:
+  ApiEndpoint:
+    Description: 'API Gateway endpoint URL'
+    Value: !If
+      - UseCustomDomain
+      - !Sub 'https://${CustomDomainName}'
+      - !Sub 'https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/${Environment}'
+    Export:
+      Name: !Sub '${AWS::StackName}-ApiEndpoint'
+  
+  LambdaFunctionArn:
+    Description: 'Lambda function ARN'
+    Value: !GetAtt ProxyLambda.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-LambdaArn'
+  
+  LambdaFunctionName:
+    Description: 'Lambda function name'
+    Value: !Ref ProxyLambda
+    Export:
+      Name: !Sub '${AWS::StackName}-LambdaName'
+  
+  ApiGatewayId:
+    Description: 'API Gateway ID'
+    Value: !Ref ApiGateway
+    Export:
+      Name: !Sub '${AWS::StackName}-ApiGatewayId'
+  
+  CloudWatchDashboard:
+    Description: 'CloudWatch Dashboard URL'
+    Value: !Sub 'https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#dashboards:name=${CustomerName}-${Environment}-bedrock-nova-proxy'
+  
+  LogGroup:
+    Description: 'CloudWatch Log Group'
+    Value: !Ref LambdaLogGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-LogGroup'
