@@ -1,0 +1,187 @@
+# Bedrock Nova Proxy 客户配置示例
+# 复制此文件并根据您的环境进行修改
+
+customer:
+  name: "example-customer"           # 客户名称，用于资源命名
+  environment: "production"          # 环境: dev, staging, production
+  region: "us-east-1"               # AWS 区域
+  account_id: "123456789012"        # AWS 账户 ID
+
+# 部署配置
+deployment:
+  type: "serverless"                # 部署类型: serverless, container, hybrid
+  
+  # VPC 配置（可选，用于私有网络部署）
+  vpc:
+    enabled: false                  # 是否部署在客户 VPC 中
+    vpc_id: ""                      # VPC ID（如果启用）
+    subnet_ids: []                  # 子网 ID 列表（如果启用）
+    security_group_ids: []          # 安全组 ID 列表（可选）
+  
+  # 自定义域名配置（可选）
+  custom_domain:
+    enabled: false                  # 是否使用自定义域名
+    domain_name: ""                 # 域名，如: api.customer.com
+    certificate_arn: ""             # SSL 证书 ARN
+    hosted_zone_id: ""              # Route53 托管区域 ID
+
+# 安全配置
+security:
+  # 加密配置
+  encryption:
+    enabled: true                   # 启用加密
+    kms_key_id: ""                  # 自定义 KMS 密钥 ID（可选）
+  
+  # 跨账户访问配置（如果需要）
+  cross_account:
+    enabled: false                  # 是否启用跨账户访问
+    role_arn: ""                    # 跨账户角色 ARN
+  
+  # IP 白名单（可选）
+  ip_whitelist:
+    enabled: false                  # 是否启用 IP 白名单
+    allowed_ips: []                 # 允许的 IP 地址列表
+
+# 监控配置
+monitoring:
+  # CloudWatch 配置
+  cloudwatch:
+    enabled: true                   # 启用 CloudWatch 监控
+    log_retention_days: 30          # 日志保留天数
+    dashboard_enabled: true         # 启用仪表板
+  
+  # 自定义指标
+  custom_metrics:
+    enabled: true                   # 启用自定义指标
+    namespace: "Customer/BedrockNovaProxy"  # 指标命名空间
+  
+  # 告警配置
+  alerts:
+    enabled: true                   # 启用告警
+    sns_topic_arn: ""               # SNS 主题 ARN（用于告警通知）
+    error_threshold: 10             # 错误阈值
+    latency_threshold: 5000         # 延迟阈值（毫秒）
+
+# 模型映射配置
+models:
+  # OpenAI 模型到 Nova 模型的映射
+  mappings:
+    "gpt-4o": "amazon.nova-pro-v1:0"
+    "gpt-4o-mini": "amazon.nova-lite-v1:0"
+    "gpt-3.5-turbo": "amazon.nova-micro-v1:0"
+    # 可以添加自定义映射
+    # "custom-model": "amazon.nova-premier-v1:0"
+  
+  # 默认模型配置
+  default_model: "amazon.nova-lite-v1:0"
+  
+  # 模型特定配置
+  model_configs:
+    "amazon.nova-pro-v1:0":
+      max_tokens: 4096
+      temperature: 0.7
+    "amazon.nova-lite-v1:0":
+      max_tokens: 2048
+      temperature: 0.7
+    "amazon.nova-micro-v1:0":
+      max_tokens: 1024
+      temperature: 0.7
+
+# 性能配置
+performance:
+  # Lambda 配置（用于无服务器部署）
+  lambda:
+    memory_size: 1024               # 内存大小（MB）
+    timeout: 300                    # 超时时间（秒）
+    reserved_concurrency: 100       # 预留并发数
+    provisioned_concurrency: 0      # 预置并发数
+  
+  # API Gateway 配置
+  api_gateway:
+    throttling:
+      rate_limit: 1000              # 每秒请求数限制
+      burst_limit: 2000             # 突发请求数限制
+    
+    caching:
+      enabled: false                # 启用缓存
+      ttl: 300                      # 缓存 TTL（秒）
+  
+  # 容器配置（用于容器部署）
+  container:
+    cpu: 512                        # CPU 单位
+    memory: 1024                    # 内存（MB）
+    min_capacity: 2                 # 最小实例数
+    max_capacity: 20                # 最大实例数
+    target_cpu_utilization: 70      # 目标 CPU 利用率
+
+# 成本控制配置
+cost_control:
+  # 预算配置
+  budget:
+    enabled: false                  # 启用预算控制
+    monthly_limit: 1000             # 月度预算限制（美元）
+    alert_threshold: 80             # 告警阈值（百分比）
+  
+  # 自动优化
+  auto_optimization:
+    enabled: true                   # 启用自动优化
+    schedule: "rate(7 days)"        # 优化频率
+
+# 备份和灾难恢复
+backup:
+  # 配置备份
+  config_backup:
+    enabled: true                   # 启用配置备份
+    s3_bucket: ""                   # 备份 S3 存储桶
+    retention_days: 90              # 备份保留天数
+  
+  # 跨区域复制
+  cross_region:
+    enabled: false                  # 启用跨区域部署
+    backup_region: "us-west-2"      # 备份区域
+
+# 集成配置
+integrations:
+  # 身份验证集成
+  authentication:
+    type: "none"                    # 认证类型: none, api_key, oauth, saml
+    # 如果使用 API Key 认证
+    api_key:
+      header_name: "X-API-Key"
+      secret_name: ""               # AWS Secrets Manager 中的密钥名称
+  
+  # 日志集成
+  logging:
+    # 外部日志系统集成
+    external_logging:
+      enabled: false                # 启用外部日志
+      endpoint: ""                  # 日志端点
+      format: "json"                # 日志格式
+  
+  # 指标集成
+  metrics:
+    # 外部指标系统集成
+    external_metrics:
+      enabled: false                # 启用外部指标
+      endpoint: ""                  # 指标端点
+      format: "prometheus"          # 指标格式
+
+# 自定义设置
+custom_settings:
+  # 客户特定的环境变量
+  environment_variables:
+    CUSTOM_SETTING_1: "value1"
+    CUSTOM_SETTING_2: "value2"
+  
+  # 自定义标签
+  tags:
+    Project: "bedrock-nova-proxy"
+    Environment: "production"
+    Customer: "example-customer"
+    CostCenter: "engineering"
+  
+  # 其他自定义配置
+  features:
+    enable_debug_logging: false     # 启用调试日志
+    enable_request_tracing: true    # 启用请求跟踪
+    enable_response_caching: false  # 启用响应缓存
