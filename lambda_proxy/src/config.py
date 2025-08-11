@@ -6,7 +6,8 @@ from typing import Dict, Any
 
 # Environment variables
 OPENAI_API_KEY_SECRET_ARN = os.environ.get('OPENAI_API_KEY_SECRET_ARN')
-AWS_REGION = os.environ.get('AWS_REGION', 'us-east-1')
+# Use AWS_DEFAULT_REGION (provided by Lambda runtime) or fallback to us-east-1
+AWS_REGION = os.environ.get('AWS_DEFAULT_REGION') or os.environ.get('BEDROCK_REGION', 'us-east-1')
 DEBUG = os.environ.get('DEBUG', 'false').lower() == 'true'
 LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO')
 

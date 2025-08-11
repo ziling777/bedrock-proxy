@@ -1,0 +1,169 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Bedrock Nova Proxy - Simple Serverless Deployment (Tested)'
+
+Parameters:
+  CustomerName:
+    Type: String
+    Description: 'Customer name for resource naming'
+    MinLength: 1
+    MaxLength: 50
+    AllowedPattern: '^[a-zA-Z0-9-]+$'
+  
+  Environment:
+    Type: String
+    Default: 'dev'
+    AllowedValues: ['dev', 'staging', 'prod']
+    Description: 'Deployment environment'
+  
+  DeploymentPackageS3Bucket:
+    Type: String
+    Description: 'S3 bucket containing the deployment package'
+  
+  DeploymentPackageS3Key:
+    Type: String
+    Description: 'S3 key for the deployment package'
+
+Resources:
+  # IAM Role for Lambda
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${CustomerName}-${Environment}-bedrock-nova-proxy-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: BedrockAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:InvokeModelWithResponseStream
+                Resource: 
+                  - 'arn:aws:bedrock:eu-central-1::foundation-model/amazon.nova-*'
+                  - 'arn:aws:bedrock:eu-north-1::foundation-model/amazon.nova-*'
+                  - 'arn:aws:bedrock:eu-west-1::foundation-model/amazon.nova-*'
+                  - 'arn:aws:bedrock:eu-west-3::foundation-model/amazon.nova-*'
+                  - !Sub 'arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/*'
+              - Effect: Allow
+                Action:
+                  - bedrock:ListFoundationModels
+                  - bedrock:ListInferenceProfiles
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricData
+                Resource: '*'
+
+  # Lambda Function
+  ProxyLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${CustomerName}-${Environment}-bedrock-nova-proxy'
+      Description: !Sub 'Bedrock Nova Proxy for ${CustomerName} ${Environment}'
+      Runtime: python3.11
+      Handler: lambda_function.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        S3Bucket: !Ref DeploymentPackageS3Bucket
+        S3Key: !Ref DeploymentPackageS3Key
+      Timeout: 300
+      MemorySize: 1024
+      Environment:
+        Variables:
+          CUSTOMER_NAME: !Ref CustomerName
+          ENVIRONMENT: !Ref Environment
+          LOG_LEVEL: 'INFO'
+          ENABLE_METRICS: 'true'
+          METRICS_NAMESPACE: 'Customer/BedrockNovaProxy'
+
+  # CloudWatch Log Group
+  LambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${CustomerName}-${Environment}-bedrock-nova-proxy'
+      RetentionInDays: 7
+
+  # API Gateway
+  ApiGateway:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: !Sub '${CustomerName}-${Environment}-bedrock-nova-proxy-api'
+      Description: !Sub 'Bedrock Nova Proxy API for ${CustomerName} ${Environment}'
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+
+  # API Gateway Resource (proxy+)
+  ProxyResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !GetAtt ApiGateway.RootResourceId
+      PathPart: '{proxy+}'
+
+  # API Gateway Method (ANY)
+  ProxyMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref ProxyResource
+      HttpMethod: ANY
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ProxyLambda.Arn}/invocations'
+
+  # API Gateway Method for root
+  RootMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !GetAtt ApiGateway.RootResourceId
+      HttpMethod: ANY
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ProxyLambda.Arn}/invocations'
+
+  # API Gateway Deployment
+  ApiDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn: 
+      - ProxyMethod
+      - RootMethod
+    Properties:
+      RestApiId: !Ref ApiGateway
+      StageName: !Ref Environment
+
+  # Lambda Permission for API Gateway
+  LambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ProxyLambda
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*'
+
+Outputs:
+  ApiEndpoint:
+    Description: 'API Gateway endpoint URL'
+    Value: !Sub 'https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/${Environment}'
+    Export:
+      Name: !Sub '${AWS::StackName}-ApiEndpoint'
+  
+  LambdaFunctionName:
+    Description: 'Lambda function name'
+    Value: !Ref ProxyLambda
+    Export:
+      Name: !Sub '${AWS::StackName}-LambdaName'

@@ -167,7 +167,7 @@ Resources:
               }
       Environment:
         Variables:
-          AWS_REGION: !Ref BedrockRegion
+          BEDROCK_REGION: !Ref BedrockRegion
           LOG_LEVEL: !Ref LogLevel
           DEBUG: !If [IsDebugMode, 'true', 'false']
           ENABLE_AUTHENTICATION: !Ref EnableAuthentication
@@ -394,8 +394,6 @@ Resources:
       - HealthGetMethod
     Properties:
       RestApiId: !Ref ApiGateway
-      StageName: !Ref Stage
-      StageDescription: !Sub '${Stage} stage for Bedrock Nova Proxy API'
 
   # CloudWatch Alarms
   LambdaErrorAlarm:

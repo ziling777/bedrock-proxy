@@ -184,12 +184,11 @@ Resources:
         S3Key: !Ref DeploymentPackageS3Key
       Timeout: !Ref LambdaTimeout
       MemorySize: !Ref LambdaMemorySize
-      ReservedConcurrencyLimit: !Ref ReservedConcurrency
+      ReservedConcurrency: !Ref ReservedConcurrency
       Environment:
         Variables:
           CUSTOMER_NAME: !Ref CustomerName
           ENVIRONMENT: !Ref Environment
-          AWS_REGION: !Ref AWS::Region
           LOG_LEVEL: 'INFO'
           ENABLE_METRICS: 'true'
           METRICS_NAMESPACE: 'Customer/BedrockNovaProxy'
@@ -298,8 +297,6 @@ Resources:
       - RootMethod
     Properties:
       RestApiId: !Ref ApiGateway
-      StageName: !Ref Environment
-      StageDescription: !Sub '${Environment} stage for ${CustomerName}'
 
   # API Gateway Stage
   ApiStage:

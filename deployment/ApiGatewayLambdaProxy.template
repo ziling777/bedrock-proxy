@@ -92,7 +92,6 @@ Resources:
       Environment:
         Variables:
           OPENAI_API_KEY_SECRET_ARN: !Ref OpenAIApiKeySecretArn
-          AWS_REGION: !Ref AWS::Region
           LOG_LEVEL: !Ref LogLevel
           DEBUG: !If [IsDebugMode, 'true', 'false']
           ENABLE_AUTHENTICATION: !Ref EnableAuthentication
@@ -267,8 +266,6 @@ Resources:
       - HealthGetMethod
     Properties:
       RestApiId: !Ref ApiGateway
-      StageName: !Ref Stage
-      StageDescription: !Sub '${Stage} stage for OpenAI Proxy API'
 
   # CloudWatch Alarms
   LambdaErrorAlarm:
