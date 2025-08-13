@@ -11,12 +11,23 @@ AWS_REGION = os.environ.get('AWS_DEFAULT_REGION') or os.environ.get('BEDROCK_REG
 DEBUG = os.environ.get('DEBUG', 'false').lower() == 'true'
 LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO')
 
-# Default model mappings
+# Default model mappings (OpenAI model -> Bedrock model)
+# For EU regions, all OpenAI models map to Nova Lite for cost optimization
 DEFAULT_MODEL_MAPPINGS = {
-    'amazon.nova-lite-v1:0': 'gpt-4o-mini',
-    'amazon.nova-pro-v1:0': 'gpt-4o-mini',
-    'amazon.nova-micro-v1:0': 'gpt-4o-mini',
-    'gpt-4o-mini': 'gpt-4o-mini',  # Direct mapping
+    'gpt-4o-mini': 'eu.amazon.nova-lite-v1:0',
+    'gpt-4o': 'eu.amazon.nova-lite-v1:0', 
+    'gpt-3.5-turbo': 'eu.amazon.nova-lite-v1:0',
+    'gpt-4': 'eu.amazon.nova-lite-v1:0',
+    'gpt-4-turbo': 'eu.amazon.nova-lite-v1:0',
+    'gpt-4-turbo-preview': 'eu.amazon.nova-lite-v1:0',
+    # Support both direct model names and EU inference profiles
+    'amazon.nova-lite-v1:0': 'eu.amazon.nova-lite-v1:0',
+    'amazon.nova-pro-v1:0': 'eu.amazon.nova-lite-v1:0',
+    'amazon.nova-micro-v1:0': 'eu.amazon.nova-lite-v1:0',
+    # Direct EU inference profile support
+    'eu.amazon.nova-lite-v1:0': 'eu.amazon.nova-lite-v1:0',
+    'eu.amazon.nova-pro-v1:0': 'eu.amazon.nova-lite-v1:0',
+    'eu.amazon.nova-micro-v1:0': 'eu.amazon.nova-lite-v1:0',
 }
 
 # Timeout settings (in seconds)

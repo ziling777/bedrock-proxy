@@ -172,3 +172,11 @@ temp/
 # CloudFormation outputs
 outputs/
 stacks/
+
+# Lambda dependencies (should be installed during deployment)
+lambda_proxy/*-dist-info/
+lambda_proxy/*/
+lambda_proxy/*.py
+!lambda_proxy/src/
+!lambda_proxy/requirements.txt
+!lambda_proxy/tests/
