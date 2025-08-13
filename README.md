@@ -49,16 +49,17 @@ client = OpenAI(
 
 # 其他代码完全不变！
 response = client.chat.completions.create(
-    model="gpt-4o-mini",  # 自动映射到 eu.amazon.nova-lite-v1:0
+    model="gpt-4o-mini",  # 用户调用 OpenAI 模型名
     messages=[{"role": "user", "content": "Hello!"}]
 )
+# 代理自动将 gpt-4o-mini 映射到 eu.amazon.nova-lite-v1:0 并调用
 ```
 
 ## 📋 模型映射
 
 **当前配置：所有模型统一映射到 Nova Lite（EU区域）以优化成本**
 
-| OpenAI 模型 | Nova 模型 | 用途 | 成本优势 |
+| 用户调用的模型 | 实际调用的模型 | 用途 | 成本优势 |
 |-------------|-----------|------|----------|
 | `gpt-3.5-turbo` | `eu.amazon.nova-lite-v1:0` | 统一使用 Nova Lite | 成本优化 |
 | `gpt-4o-mini` | `eu.amazon.nova-lite-v1:0` | 统一使用 Nova Lite | 成本优化 |
@@ -66,7 +67,11 @@ response = client.chat.completions.create(
 | `gpt-4` | `eu.amazon.nova-lite-v1:0` | 统一使用 Nova Lite | 大幅成本节省 |
 | `gpt-4-turbo` | `eu.amazon.nova-lite-v1:0` | 统一使用 Nova Lite | 大幅成本节省 |
 
-> **注意**：当前配置优先考虑成本优化，所有模型请求都使用 Nova Lite。如需不同性能级别，可在配置中调整映射关系。
+> **工作原理**：
+> - 用户在代码中使用熟悉的 OpenAI 模型名称（如 `gpt-4o-mini`）
+> - 代理自动将这些模型名映射到 `eu.amazon.nova-lite-v1:0`
+> - 实际的 API 调用发送到 Amazon Bedrock Nova Lite 模型
+> - 当前配置优先考虑成本优化，如需不同性能级别，可在配置中调整映射关系
 
 ## 🏗️ 架构概览
 
