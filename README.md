@@ -49,18 +49,24 @@ client = OpenAI(
 
 # 其他代码完全不变！
 response = client.chat.completions.create(
-    model="gpt-4o-mini",  # 自动映射到 Nova Lite
+    model="gpt-4o-mini",  # 自动映射到 eu.amazon.nova-lite-v1:0
     messages=[{"role": "user", "content": "Hello!"}]
 )
 ```
 
 ## 📋 模型映射
 
-| OpenAI 模型 | Nova 模型 | 用途 | 成本节省 |
+**当前配置：所有模型统一映射到 Nova Lite（EU区域）以优化成本**
+
+| OpenAI 模型 | Nova 模型 | 用途 | 成本优势 |
 |-------------|-----------|------|----------|
-| `gpt-3.5-turbo` | `amazon.nova-micro-v1:0` | 快速文本处理 | ~77% |
-| `gpt-4o-mini` | `amazon.nova-lite-v1:0` | 平衡性能，多模态 | ~33% |
-| `gpt-4o` | `amazon.nova-pro-v1:0` | 高性能，多模态 | ~84% |
+| `gpt-3.5-turbo` | `eu.amazon.nova-lite-v1:0` | 统一使用 Nova Lite | 成本优化 |
+| `gpt-4o-mini` | `eu.amazon.nova-lite-v1:0` | 统一使用 Nova Lite | 成本优化 |
+| `gpt-4o` | `eu.amazon.nova-lite-v1:0` | 统一使用 Nova Lite | 大幅成本节省 |
+| `gpt-4` | `eu.amazon.nova-lite-v1:0` | 统一使用 Nova Lite | 大幅成本节省 |
+| `gpt-4-turbo` | `eu.amazon.nova-lite-v1:0` | 统一使用 Nova Lite | 大幅成本节省 |
+
+> **注意**：当前配置优先考虑成本优化，所有模型请求都使用 Nova Lite。如需不同性能级别，可在配置中调整映射关系。
 
 ## 🏗️ 架构概览
 
